@@ -1,0 +1,6 @@
+.env
+env/
+data/
+output/
+*.code-workspace
+config.yaml

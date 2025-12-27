@@ -1,0 +1,57 @@
+# ────── INPUTS ──────
+inputs:
+  stock_screener_file: data/stock_screener_2025.csv
+  end_date: 2025-12-31
+  opt_points: 60
+  rng_seed: 10312008
+  available_cash: 1000000
+  min_real_nav_growth_rate: 0.00
+  inflation_rate: 0.07
+  projection_years: 5
+  lambda_diversity: 0.5
+  target_yield: 0.04
+  blended_div_cagrs_weights: [0.2, 0.3, 0.3, 0.2]
+
+# ────── BUCKETS ──────
+buckets:
+  growth: 
+    sectors: [Industrials, Technology, Consumer Cyclical]
+    per_stock_range: [0.00, 0.08]
+    total_range: [0.40, 0.60]
+  yield:
+    sectors: [Financial Services, Healthcare, Basic Materials]
+    per_stock_range: [0.00, 0.06]
+    total_range: [0.20, 0.45]
+  defensive:
+    sectors: [Utilities, Consumer Defensive, Real Estate]
+    per_stock_range: [0.00, 0.04]
+    total_range: [0.10, 0.25]
+  high_yield:
+    sectors: [Energy, Communication Services]
+    per_stock_range: [0.00, 0.03]
+    total_range: [0.00, 0.15]
+
+# ────── SECTORS ──────
+sectors:
+  Industrials:
+    max_weight: 0.20
+  Technology:
+    max_weight: 0.20
+  Consumer Cyclical:
+    max_weight: 0.20
+  Financial Services:
+    max_weight: 0.20
+  Healthcare:
+    max_weight: 0.20
+  Basic Materials:
+    max_weight: 0.20
+  Utilities:
+    max_weight: 0.20
+  Consumer Defensive:
+    max_weight: 0.20
+  Real Estate:
+    max_weight: 0.20
+  Energy:
+    max_weight: 0.20
+  Communication Services:
+    max_weight: 0.20
