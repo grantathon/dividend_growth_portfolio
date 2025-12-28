@@ -7,7 +7,6 @@ inputs:
   available_cash: 1000000
   min_real_nav_growth_rate: 0.00
   inflation_rate: 0.07
-  projection_years: 5
   lambda_diversity: 0.5
   target_yield: 0.04
   blended_div_cagrs_weights: [0.2, 0.3, 0.3, 0.2]

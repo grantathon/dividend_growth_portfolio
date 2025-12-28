@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-update_data.py — Download daily close prices and dividends from yfinance
-for tickers listed in tickers.txt, using date range from config.yaml.
-"""
-
 import os
 import time
 import logging
@@ -15,11 +9,62 @@ import yaml
 import yfinance as yf
 
 
+def setup_logger(log_file_path):
+    logger = logging.getLogger('update_data')
+    logger.setLevel(logging.INFO)
+    
+    # Remove existing handlers to avoid duplicates
+    logger.handlers = []
+    
+    # File handler
+    file_handler = logging.FileHandler(log_file_path, mode='a')
+    file_handler.setLevel(logging.INFO)
+    
+    # Format
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(formatter)
+    
+    logger.addHandler(file_handler)
+    return logger
+
+def load_config(path="config.yaml"):
+    with open(path) as f:
+        cfg = yaml.safe_load(f)
+    
+    inputs = cfg.get("inputs", {})
+    end_date_str = inputs.get("end_date")
+    stock_screener_file = inputs.get("stock_screener_file")
+
+    if not end_date_str:
+        raise ValueError("Missing 'inputs.end_date' in config.yaml")
+    
+    if not stock_screener_file:
+        raise ValueError("Missing 'inputs.stock_screener_file' in config.yaml")
+    
+    try:
+        end_date_target = pd.to_datetime(end_date_str).date()
+    except Exception as exc:
+        raise ValueError(f"Invalid end_date format in config: {end_date_str}") from exc
+    
+    # Calculate start_date target (exactly 5 years prior, same day/month)
+    # Use replace to subtract 5 years while keeping same day/month
+    # Handle leap year edge case (Feb 29)
+    try:
+        start_date_target = end_date_target.replace(year=end_date_target.year - 5)
+    except ValueError:
+        # If Feb 29 doesn't exist 5 years prior, use Feb 28
+        start_date_target = end_date_target.replace(year=end_date_target.year - 5, day=28)
+    
+    # Adjust both dates to nearest previous trading days
+    print(f"Target dates: {start_date_target} to {end_date_target}")
+    print("Adjusting to nearest previous trading days...")
+    
+    start_date = find_nearest_trading_day(start_date_target)
+    end_date = find_nearest_trading_day(end_date_target)
+    
+    return start_date.isoformat(), end_date.isoformat(), stock_screener_file
+
 def find_nearest_trading_day(target_date, reference_ticker="SPY", lookback_days=10):
-    """
-    Find the nearest previous trading day to target_date.
-    Uses a reference ticker (SPY) to determine market trading days.
-    """
     # Download data around the target date to find trading days
     start_buffer = (target_date - timedelta(days=lookback_days)).isoformat()
     end_buffer = (target_date + timedelta(days=1)).isoformat()
@@ -58,46 +103,6 @@ def find_nearest_trading_day(target_date, reference_ticker="SPY", lookback_days=
                 return candidate
         return target_date - timedelta(days=5)
 
-
-def load_config(path="config.yaml"):
-    """Load config and extract end_date from inputs section."""
-    with open(path) as f:
-        cfg = yaml.safe_load(f)
-    
-    inputs = cfg.get("inputs", {})
-    end_date_str = inputs.get("end_date")
-    stock_screener_file = inputs.get("stock_screener_file")
-
-    if not end_date_str:
-        raise ValueError("Missing 'inputs.end_date' in config.yaml")
-    
-    if not stock_screener_file:
-        raise ValueError("Missing 'inputs.stock_screener_file' in config.yaml")
-    
-    try:
-        end_date_target = pd.to_datetime(end_date_str).date()
-    except Exception as exc:
-        raise ValueError(f"Invalid end_date format in config: {end_date_str}") from exc
-    
-    # Calculate start_date target (exactly 5 years prior, same day/month)
-    # Use replace to subtract 5 years while keeping same day/month
-    # Handle leap year edge case (Feb 29)
-    try:
-        start_date_target = end_date_target.replace(year=end_date_target.year - 5)
-    except ValueError:
-        # If Feb 29 doesn't exist 5 years prior, use Feb 28
-        start_date_target = end_date_target.replace(year=end_date_target.year - 5, day=28)
-    
-    # Adjust both dates to nearest previous trading days
-    print(f"Target dates: {start_date_target} to {end_date_target}")
-    print("Adjusting to nearest previous trading days...")
-    
-    start_date = find_nearest_trading_day(start_date_target)
-    end_date = find_nearest_trading_day(end_date_target)
-    
-    return start_date.isoformat(), end_date.isoformat(), stock_screener_file
-
-
 def load_tickers(data_path):
     if not Path(data_path).exists():
         raise FileNotFoundError(f"{data_path} not found")
@@ -111,9 +116,7 @@ def load_tickers(data_path):
     
     return tickers
 
-
 def download_single_ticker(ticker, start_date, end_date):
-    """Download data for a single ticker."""
     try:
         ticker_yf = yf.Ticker(ticker)
         hist = ticker_yf.history(
@@ -137,132 +140,7 @@ def download_single_ticker(ticker, start_date, end_date):
     except Exception as exc:
         raise Exception(f"Failed to download {ticker}: {exc}")
 
-
-def load_dividend_corrections(path="dividend_corrections.yaml"):
-    """
-    Load dividend corrections from YAML file.
-    Returns dict: {ticker: {date_str: corrected_value}}
-    """
-    if not Path(path).exists():
-        return {}
-    
-    try:
-        with open(path) as f:
-            cfg = yaml.safe_load(f)
-        
-        corrections = cfg.get("corrections", {})
-        # Ensure tickers are uppercase
-        corrections_upper = {}
-        for ticker, date_corrections in corrections.items():
-            corrections_upper[ticker.upper()] = date_corrections
-        
-        return corrections_upper
-    except Exception as exc:
-        print(f"  WARNING: Could not load dividend corrections: {exc}")
-        return {}
-
-
-def apply_dividend_corrections(div_dict, corrections, logger=None):
-    """
-    Apply dividend corrections to dividend series.
-    
-    Args:
-        div_dict: Dict of {ticker: Series} with dividend data
-        corrections: Dict of {ticker: {date_str: corrected_value}}
-        logger: Optional logger for reporting
-    
-    Returns:
-        Updated div_dict with corrections applied
-    """
-    if not corrections:
-        return div_dict
-    
-    corrections_applied = 0
-    
-    for ticker, date_corrections in corrections.items():
-        if ticker not in div_dict:
-            continue
-        
-        series = div_dict[ticker].copy()  # Work with a copy
-        
-        for date_str, corrected_value in date_corrections.items():
-            try:
-                # Parse date string to match with series index
-                correction_date = pd.to_datetime(date_str)
-                
-                # Convert series index to comparable format
-                # Handle both timezone-aware and naive datetime indices
-                series_index_dates = []
-                for idx_date in series.index:
-                    if hasattr(idx_date, 'date'):
-                        # Timezone-aware datetime
-                        series_index_dates.append(idx_date.date())
-                    else:
-                        # Naive datetime or Timestamp
-                        dt = pd.to_datetime(idx_date)
-                        series_index_dates.append(dt.date())
-                
-                correction_date_only = correction_date.date()
-                
-                if correction_date_only in series_index_dates:
-                    # Find the index position
-                    idx_pos = series_index_dates.index(correction_date_only)
-                    original_value = series.iloc[idx_pos]
-                    
-                    # Update the value at the correct index
-                    series.iloc[idx_pos] = corrected_value
-                    
-                    corrections_applied += 1
-                    if logger:
-                        logger.info(f"  ✓ {ticker} {date_str}: Corrected ${original_value:.3f} → ${corrected_value:.3f}")
-                    else:
-                        print(f"  ✓ {ticker} {date_str}: Corrected ${original_value:.3f} → ${corrected_value:.3f}")
-                else:
-                    if logger:
-                        logger.warning(f"  ⚠ {ticker} {date_str}: Date not found in dividend data")
-            except Exception as exc:
-                if logger:
-                    logger.error(f"  ✗ {ticker} {date_str}: Error applying correction: {exc}")
-                else:
-                    print(f"  ✗ {ticker} {date_str}: Error applying correction: {exc}")
-        
-        # Update the dict with corrected series
-        div_dict[ticker] = series
-    
-    if corrections_applied > 0:
-        if logger:
-            logger.info(f"Applied {corrections_applied} dividend correction(s)")
-        else:
-            print(f"Applied {corrections_applied} dividend correction(s)")
-    
-    return div_dict
-
-
-def setup_logger(log_file_path):
-    """Set up logger to write to file."""
-    logger = logging.getLogger('update_data')
-    logger.setLevel(logging.INFO)
-    
-    # Remove existing handlers to avoid duplicates
-    logger.handlers = []
-    
-    # File handler
-    file_handler = logging.FileHandler(log_file_path, mode='a')
-    file_handler.setLevel(logging.INFO)
-    
-    # Format
-    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    file_handler.setFormatter(formatter)
-    
-    logger.addHandler(file_handler)
-    return logger
-
-
 def download_ticker_data_bulk(tickers, start_date, end_date, retry_delay=5, max_retries=3, logger=None):
-    """
-    Download historical data for all tickers using bulk download.
-    Retries failed tickers individually with delays to handle rate limits.
-    """
     print(f"Downloading data for {len(tickers)} tickers...")
     if logger:
         logger.info(f"Downloading data for {len(tickers)} tickers...")
@@ -385,7 +263,6 @@ def download_ticker_data_bulk(tickers, start_date, end_date, retry_delay=5, max_
     
     return ticker_data
 
-
 def main():
     # Load configuration
     try:
@@ -437,14 +314,6 @@ def main():
             div_counts[ticker] = len(div_series)
             logger.info(f"  {ticker}: {len(div_series)} dividend payments")
     
-    # NOTE: DISABLED FOR NOW
-    # # Load and apply dividend corrections
-    # corrections = load_dividend_corrections()
-    # if corrections:
-    #     print("  Applying dividend corrections...")
-    #     logger.info("  Applying dividend corrections...")
-    #     div_dict = apply_dividend_corrections(div_dict, corrections, logger)
-    
     if div_dict:
         # Create DataFrame: pandas will union all dates, ensuring no dividends are lost
         # NaN values will appear where a ticker didn't pay on a given date
@@ -493,7 +362,7 @@ def main():
     
     if price_rows:
         df_prices = pd.DataFrame(price_rows)
-        price_output_path = output_dir / "stock_prices.csv"
+        price_output_path = output_dir / "prices.csv"
         df_prices.to_csv(price_output_path, index=False)
         print(f"  Saved to {price_output_path}")
         print(f"  Shape: {df_prices.shape[0]} rows × {df_prices.shape[1]} columns")
@@ -510,7 +379,5 @@ def main():
     logger.info("=" * 80)
     return 0
 
-
 if __name__ == "__main__":
     exit(main())
-

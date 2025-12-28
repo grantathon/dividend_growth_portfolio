@@ -1,20 +1,17 @@
-import sys
 from pathlib import Path
-
+import logging
 import numpy as np
 import pandas as pd
 import yaml
 from scipy.optimize import minimize
 
-from pprint import pprint
 
 def load_config(path="config.yaml"):
-    """Load configuration from YAML file."""
     with open(path) as f:
         cfg = yaml.safe_load(f)
     return cfg
 
-def load_prices(data_path="data/stock_prices.csv"):
+def load_prices(data_path="data/prices.csv"):
     df = pd.read_csv(data_path)
     
     # Ensure index is ticker and is uppercase
@@ -121,8 +118,6 @@ def objective_max_div_cagr_portfolio(w, div_yields_array, div_cagrs_array, lambd
     port_div_cagr = portfolio_div_income_cagr(w, div_yields_array, div_cagrs_array)
     concentration_penalty = lambda_diversity * np.sum(w**2)  # HHI term
     return -port_div_cagr + concentration_penalty
-    # return -port_div_cagr
-
 
 def generate_random_initial_guess(n, weight_bounds):
     # Generate random weights within bounds
@@ -263,7 +258,6 @@ def optimize_for_target_yield(target_yield, div_cagrs_array, nav_cagrs_array, di
         }
     }
 
-
 def main():
     # Load configuration
     try:
@@ -275,7 +269,7 @@ def main():
         print("Config loaded successfully")
     except Exception as exc:
         print(f"Config error: {exc}")
-        sys.exit(1)
+        return 1
     
     # Set random seed for reproducibility
     np.random.seed(config["inputs"]["rng_seed"])
@@ -308,7 +302,7 @@ def main():
             for ticker in tickers_without_sector:
                 sector = stock_screener_df.loc[stock_screener_df['ticker'] == ticker, 'sector'].values[0]
                 print(f"  {ticker}: sector = {sector}")
-            sys.exit(1)
+            return 1
         
         # Categorize tickers by sector and build bucket indices
         ticker_to_idx = {t: i for i, t in enumerate(tickers)}
@@ -364,7 +358,7 @@ def main():
                 weight_bounds.append((0.0, 1.0))
     except Exception as exc:
         print(f"Stock screener data loading error: {exc}")
-        sys.exit(1)
+        return 1
     
     # Load prices
     print("\nLoading price data...")
@@ -373,7 +367,7 @@ def main():
         print(f"  Loaded prices for {len(prices_df)} tickers")
     except Exception as exc:
         print(f"Prices loading error: {exc}")
-        sys.exit(1)
+        return 1
 
     # Compute NAV CAGRs
     print("\nComputing NAV CAGRs...")
@@ -386,7 +380,7 @@ def main():
         print(f"  NAV CAGR range: {nav_cagrs_array.min():.2%} to {nav_cagrs_array.max():.2%}")
     except Exception as exc:
         print(f"NAV CAGR computation error: {exc}")
-        sys.exit(1)
+        return 1
     
     # Get target yield and random search points from config
     target_yield = config['inputs']['target_yield']
@@ -521,7 +515,9 @@ def main():
     else:
         error_msg = result.get('error_message', 'Unknown error') if result else 'Optimization returned None'
         print(f"✗ Failed: {error_msg}")
-        sys.exit(1)
+        return 1
 
+    return 0
+    
 if __name__ == "__main__":
-    main()
+    exit(main())
